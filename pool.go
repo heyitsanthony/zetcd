@@ -27,6 +27,8 @@ import (
 	"github.com/golang/glog"
 )
 
+const timeoutScale = 75 // num sessions * scale = min timeout
+
 type SessionPool struct {
 	sessions map[etcd.LeaseID]Session
 	c        *etcd.Client
@@ -59,6 +61,16 @@ func (sp *SessionPool) Auth(zka AuthConn) (Session, error) {
 
 	if req.ProtocolVersion != 0 {
 		panic(fmt.Sprintf("unhandled req stuff! %+v", req))
+	}
+
+	sp.mu.RLock()
+	numSessions := len(sp.sessions)
+	sp.mu.RUnlock()
+
+	minTimeOut := int32(timeoutScale * numSessions)
+	if req.TimeOut < minTimeOut && req.TimeOut < 5000 {
+		glog.V(9).Infof("renegotiated timeout from %dms to %dms", req.TimeOut, minTimeOut)
+		req.TimeOut = minTimeOut
 	}
 
 	// TODO use ttl from lease
